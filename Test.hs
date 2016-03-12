@@ -12,9 +12,9 @@
 -- Os 2 alunos do grupo devem também indentificar-se nos comentários abaixo.
 --
 -- Aluno 1
--- Número:
--- Nome:
--- Curso:
+-- Número: A74817
+-- Nome: Marcelo António Caridade Miranda
+-- Curso: MIEI
 --
 -- Aluno 2
 -- Número:
@@ -33,24 +33,105 @@ import Data.Set as Set
 --
 -- Teste unitário
 --
-    
+
+-- Testar swap
+t_swap :: Test
+t_swap = swap Edge {source = 1, target = 2 } ~?= Edge {source = 2, target = 1}
+
+-- Testar empty
+t_empty :: Test
+t_empty = let g = Graph.empty
+              in Set.null (nodes g) && Set.null (edges g) ~?= True
+
+-- Testar isEmpty
+t_isEmpty = [t_isEmpty1, t_isEmpty2]
+
 g1 :: Graph Int
-g1 = Graph {nodes = fromList [1],
-            edges = fromList [Edge 1 1]
-           }
+g1 = Graph { nodes = fromList [1,2], edges = fromList [Edge 1 2] }
 
--- Um exemplo de um teste unitário.
-test_adj :: Test
-test_adj = adj g1 1 ~?= fromList [Edge 1 1]
+g2 :: Graph Int
+g2 = Graph { nodes = fromList[], edges = fromList [] }
 
---
+t_isEmpty1 = isEmpty g1 ~?= False
+t_isEmpty2 = isEmpty g2 ~?= True
+
+-- Testar isValid, isDAG, isForest
+t_isValid = [t_isValid1, t_isValid2, t_isValid3]
+t_isDAG = [t_isDAG1, t_isDAG2]
+t_isForest = [t_isForest1, t_isForest2]
+
+g3 :: Graph Int
+g3 = Graph { nodes = fromList [1], edges = fromList [Edge 1 3] }
+
+g4 :: Graph Int
+g4 = Graph { nodes = fromList [1], edges = fromList [Edge 3 1] }
+
+g5 :: Graph Int
+g5 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 2, Edge 2 3, Edge 3 1] }
+
+g6 :: Graph Int
+g6 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 2, Edge 1 3] }
+
+g7 :: Graph Int
+g7 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 3, Edge 2 3] }
+
+t_isValid1 = isValid g3 ~?= False
+t_isValid2 = isValid g4 ~?= False
+t_isValid3 = isValid g5 ~?= True
+
+t_isDAG1 = isDAG g5 ~?= False
+t_isDAG2 = isDAG g6 ~?= True
+
+t_isForest1 = isForest g6 ~?= False
+t_isForest2 = isForest g7 ~?= True
+
+-- Testar isSubgraphOf
+t_isSubgraphOf = [t_isSubgraphOf1, t_isSubgraphOf2, t_isSubgraphOf3, t_isSubgraphOf4]
+
+g8 :: Graph Int
+g8 = Graph { nodes = fromList [1,2,3,4], edges = fromList [Edge 1 3] }
+
+g9 :: Graph Int
+g9 = Graph { nodes = fromList[1,2,3], edges = fromList[Edge 1 3, Edge 1 2] }
+
+t_isSubgraphOf1 = isSubgraphOf g8 g7 ~?= False
+t_isSubgraphOf2 = isSubgraphOf g9 g7 ~?= False
+t_isSubgraphOf3 = isSubgraphOf g7 g7 ~?= True
+t_isSubgraphOf4 = isSubgraphOf (Graph { nodes = Set.empty, edges = Set.empty }) g7 ~?= True
+
+-- Testar adj
+g10 :: Graph Int
+g10 = Graph { nodes = fromList [1], edges = Set.empty }
+
+g11 :: Graph Int
+g11 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 2, Edge 1 3, Edge 2 3] }
+
+t_adj = [t_adj1, t_adj2]
+t_adj1 = adj g10 1 ~?= fromList []
+t_adj2 = adj g11 1 ~?= fromList [Edge 1 2, Edge 1 3]
+
+-- Testar transpose
+g12 :: Graph Int
+g12 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 2, Edge 2 3, Edge 3 1] }
+
+t_transpose = transpose g12 ~?= Graph { nodes = nodes g12, edges = fromList [Edge 1 3, Edge 2 1, Edge 3 2] }
+
+-- Testar union
+g13 :: Graph Int
+g13 = Graph { nodes = fromList [1,2], edges = fromList [Edge 2 1] }
+
+g14 :: Graph Int
+g14 = Graph { nodes = fromList [2,3], edges = fromList [Edge 3 2] }
+
+t_union = Graph.union g13 g14 ~?= Graph { nodes = fromList [1,2,3], edges = fromList [Edge 2 1, Edge 3 2] }
+
 -- Tarefa 1
 --
 -- Defina testes unitários para todas as funções do módulo Graph,
 -- tentando obter o máximo de cobertura de expressões, condições, etc.
 --
            
-main = runTestTT $ TestList [test_adj]
+main = runTestTT $ TestList [t_swap, t_empty]
 
 --
 -- Teste aleatório
