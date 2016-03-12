@@ -34,6 +34,9 @@ import Data.Set as Set
 -- Teste unitário
 --
 
+t_list = concat  [[t_swap], [t_empty], [t_transpose], [t_union], t_isEmpty, t_isValid,
+                  t_isDAG, t_isForest, t_isSubgraphOf, t_adj]
+
 -- Testar swap
 t_swap :: Test
 t_swap = swap Edge {source = 1, target = 2 } ~?= Edge {source = 2, target = 1}
@@ -131,7 +134,7 @@ t_union = Graph.union g13 g14 ~?= Graph { nodes = fromList [1,2,3], edges = from
 -- tentando obter o máximo de cobertura de expressões, condições, etc.
 --
            
-main = runTestTT $ TestList [t_swap, t_empty]
+main = runTestTT $ TestList t_list
 
 --
 -- Teste aleatório
