@@ -161,10 +161,15 @@ instance Arbitrary v => Arbitrary (Edge v) where
                    return $ Edge {source = s, target = t}
 
 instance (Ord v, Arbitrary v) => Arbitrary (Graph v) where
-    arbitrary = aux `suchThat` isValid
-        where aux = do ns <- arbitrary
-                       es <- arbitrary
-                       return $ Graph {nodes = fromList ns, edges = fromList es}
+    arbitrary = do ns <- arbitrary
+                   case ns of 
+                     [] -> return $ Graph { nodes = Set.empty, edges = Set.empty} 
+                     _  -> do es <- listOf (aux ns) 
+                              return $ Graph {nodes = fromList ns, edges = fromList es}
+
+                     where aux ns = do src <- elements ns
+                                       trg <- elements ns
+                                       return $ Edge {source = src, target = trg }
  
 prop_valid :: Graph Int -> Property
 prop_valid g = collect (length (edges g)) $ isValid g
