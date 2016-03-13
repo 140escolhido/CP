@@ -117,7 +117,7 @@ t_adj2 = adj g11 1 ~?= fromList [Edge 1 2, Edge 1 3]
 g12 :: Graph Int
 g12 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 2, Edge 2 3, Edge 3 1] }
 
-t_transpose = transpose g12 ~?= Graph { nodes = nodes g12, edges = fromList [Edge 1 3, Edge 2 1, Edge 3 2] }
+t_transpose = Graph.transpose g12 ~?= Graph { nodes = nodes g12, edges = fromList [Edge 1 3, Edge 2 1, Edge 3 2] }
 
 -- Testar union
 g13 :: Graph Int
@@ -176,7 +176,30 @@ prop_valid g = collect (length (edges g)) $ isValid g
 
 -- Gerador de DAGs
 dag :: (Ord v, Arbitrary v) => Gen (DAG v)
-dag = arbitrary `suchThat` isDAG
+dag = do ns <- arbitrary
+         case ns of
+           [] -> return $ Graph { nodes = Set.empty, edges = Set.empty }
+           _  -> do n <- choose (0, 100)
+                    e <- aux n (fromList ns)
+                    return $ Graph {nodes = fromList ns, edges = fromList e }
+
+                    where aux :: (Ord v) => Int -> Set v -> Gen [Edge v]
+                          aux 0 ns = return []
+                          aux n ns = do t <- aux (n-1) ns 
+                                        p <- choose (0, length ns - 1)
+                                        let g = Graph { nodes = ns, edges = fromList t}
+                                        let l = Set.map (\ node -> (node, reachable (Graph.transpose g) node)) ns
+                                        let (nd, r) = elemAt p l
+                                        let dn = ns \\ r
+                                        case Set.null dn of
+                                           True  -> return t
+                                           False -> do h <- selEdge nd dn
+                                                       return (h:t)
+
+                          selEdge :: v -> Set v -> Gen (Edge v)
+                          selEdge src nodes = do trg <- elements $ toList nodes
+                                                 return $ Edge {source = src, target = trg}
+                                          
 
 prop_dag :: Property
 prop_dag = forAll (dag :: Gen (DAG Int)) $ \g -> collect (length (edges g)) $ isDAG g
