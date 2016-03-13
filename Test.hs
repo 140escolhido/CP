@@ -188,17 +188,17 @@ dag = do ns <- arbitrary
                           aux n ns = do t <- aux (n-1) ns 
                                         p <- choose (0, length ns - 1)
                                         let g = Graph { nodes = ns, edges = fromList t}
-                                        let l = Set.map (\ node -> (node, reachable (Graph.transpose g) node)) ns
-                                        let (nd, r) = elemAt p l
-                                        let dn = ns \\ r
-                                        case Set.null dn of
-                                           True  -> return t
-                                           False -> do h <- selEdge nd dn
-                                                       return (h:t)
+                                            l = Set.map (\ node -> (node, reachable (Graph.transpose g) node)) ns
+                                            (node, r) = elemAt p l
+                                            diff = ns \\ r
+                                         in case Set.null dn of
+                                               True  -> return t
+                                               False -> do h <- selectEdge node diff
+                                                           return (h:t)
 
-                          selEdge :: v -> Set v -> Gen (Edge v)
-                          selEdge src nodes = do trg <- elements $ toList nodes
-                                                 return $ Edge {source = src, target = trg}
+                          selectEdge :: v -> Set v -> Gen (Edge v)
+                          selectEdge src nodes = do trg <- elements $ toList nodes
+                                                    return $ Edge {source = src, target = trg}
                                           
 
 prop_dag :: Property
