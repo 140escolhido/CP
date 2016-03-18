@@ -30,103 +30,112 @@ import Test.HUnit hiding (path)
 import Test.QuickCheck
 import Data.Set as Set
 
+import Data.List
+
 --
 -- Teste unitário
 --
 
-t_list = concat  [[t_swap], [t_empty], [t_transpose], [t_union], t_isEmpty, t_isValid,
+t_list = concat  [t_swap, [t_empty], t_transpose, [t_union], t_isEmpty, t_isValid,
                   t_isDAG, t_isForest, t_isSubgraphOf, t_adj]
 
 -- Testar swap
-t_swap :: Test
-t_swap = swap Edge {source = 1, target = 2 } ~?= Edge {source = 2, target = 1}
+t_swap = [t_swap1, t_swap2]
+
+t_swap1 = swap Edge {source = 140, target = 39 } ~?= Edge { source = 39, target = 140 }
+t_swap2 = swap Edge {source = 3, target = 3 } ~?= Edge { source = 3, target = 3 }
 
 -- Testar empty
-t_empty :: Test
-t_empty = let g = Graph.empty
-              in Set.null (nodes g) && Set.null (edges g) ~?= True
+t_empty = Set.null (nodes Graph.empty) && Set.null (edges Graph.empty) ~?= True
 
 -- Testar isEmpty
 t_isEmpty = [t_isEmpty1, t_isEmpty2]
 
-g1 :: Graph Int
-g1 = Graph { nodes = fromList [1,2], edges = fromList [Edge 1 2] }
+emptyGraph :: Graph Int
+emptyGraph = Graph Set.empty Set.empty
 
 g2 :: Graph Int
-g2 = Graph { nodes = fromList[], edges = fromList [] }
+g2 = Graph (fromList [1,2]) Set.empty
 
-t_isEmpty1 = isEmpty g1 ~?= False
-t_isEmpty2 = isEmpty g2 ~?= True
+t_isEmpty1 = isEmpty emptyGraph ~?= True
+t_isEmpty2 = isEmpty g2 ~?= False
 
 -- Testar isValid, isDAG, isForest
-t_isValid = [t_isValid1, t_isValid2, t_isValid3]
+t_isValid = [t_isValid1, t_isValid2, t_isValid3, t_isValid4]
 t_isDAG = [t_isDAG1, t_isDAG2]
 t_isForest = [t_isForest1, t_isForest2]
 
 g3 :: Graph Int
-g3 = Graph { nodes = fromList [1], edges = fromList [Edge 1 3] }
+g3 = Graph (fromList [1]) (fromList [Edge 1 3])
 
 g4 :: Graph Int
-g4 = Graph { nodes = fromList [1], edges = fromList [Edge 3 1] }
+g4 = Graph (fromList [1]) (fromList [Edge 3 1])
 
 g5 :: Graph Int
-g5 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 2, Edge 2 3, Edge 3 1] }
+g5 = Graph (fromList [1,2]) (fromList [Edge 1 2, Edge 2 1])
 
 g6 :: Graph Int
-g6 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 2, Edge 1 3] }
+g6 = Graph (fromList [1,2,3]) (fromList [Edge 1 2, Edge 2 3, Edge 3 1])
 
 g7 :: Graph Int
-g7 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 3, Edge 2 3] }
+g7 = Graph (fromList [1,2,3]) (fromList [Edge 1 2, Edge 1 3])
+
+g8 :: Graph Int
+g8 = Graph (fromList [1,2,3]) (fromList [Edge 1 3, Edge 2 3])
 
 t_isValid1 = isValid g3 ~?= False
 t_isValid2 = isValid g4 ~?= False
-t_isValid3 = isValid g5 ~?= True
+t_isValid3 = isValid g5 ~?= False
+t_isValid4 = isValid g6 ~?= True
 
-t_isDAG1 = isDAG g5 ~?= False
-t_isDAG2 = isDAG g6 ~?= True
+t_isDAG1 = isDAG g6 ~?= False
+t_isDAG2 = isDAG g7 ~?= True
 
-t_isForest1 = isForest g6 ~?= False
-t_isForest2 = isForest g7 ~?= True
+t_isForest1 = isForest g7 ~?= False
+t_isForest2 = isForest g8 ~?= True
 
 -- Testar isSubgraphOf
 t_isSubgraphOf = [t_isSubgraphOf1, t_isSubgraphOf2, t_isSubgraphOf3, t_isSubgraphOf4]
 
-g8 :: Graph Int
-g8 = Graph { nodes = fromList [1,2,3,4], edges = fromList [Edge 1 3] }
-
 g9 :: Graph Int
-g9 = Graph { nodes = fromList[1,2,3], edges = fromList[Edge 1 3, Edge 1 2] }
+g9 = Graph (fromList [1,2,3,4]) (fromList [Edge 1 3])
 
-t_isSubgraphOf1 = isSubgraphOf g8 g7 ~?= False
-t_isSubgraphOf2 = isSubgraphOf g9 g7 ~?= False
-t_isSubgraphOf3 = isSubgraphOf g7 g7 ~?= True
-t_isSubgraphOf4 = isSubgraphOf (Graph { nodes = Set.empty, edges = Set.empty }) g7 ~?= True
+g10 :: Graph Int
+g10 = Graph (fromList[1,2,3]) (fromList[Edge 1 3, Edge 1 2])
+
+t_isSubgraphOf1 = isSubgraphOf g9 g8 ~?= False
+t_isSubgraphOf2 = isSubgraphOf g10 g8 ~?= False
+t_isSubgraphOf3 = isSubgraphOf g8 g8 ~?= True
+t_isSubgraphOf4 = isSubgraphOf emptyGraph g8 ~?= True
 
 -- Testar adj
-g10 :: Graph Int
-g10 = Graph { nodes = fromList [1], edges = Set.empty }
-
 g11 :: Graph Int
-g11 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 2, Edge 1 3, Edge 2 3] }
+g11 = Graph (fromList [1]) Set.empty
+
+g12 :: Graph Int
+g12 = Graph (fromList [1,2,3]) (fromList [Edge 1 2, Edge 1 3, Edge 2 3])
 
 t_adj = [t_adj1, t_adj2]
-t_adj1 = adj g10 1 ~?= fromList []
-t_adj2 = adj g11 1 ~?= fromList [Edge 1 2, Edge 1 3]
+t_adj1 = adj g11 1 ~?= fromList []
+t_adj2 = adj g12 1 ~?= fromList [Edge 1 2, Edge 1 3]
 
 -- Testar transpose
-g12 :: Graph Int
-g12 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 2, Edge 2 3, Edge 3 1] }
+t_transpose = [t_transpose1, t_transpose2]
 
-t_transpose = Graph.transpose g12 ~?= Graph { nodes = nodes g12, edges = fromList [Edge 1 3, Edge 2 1, Edge 3 2] }
+g13 :: Graph Int
+g13 = Graph (fromList [1,2,3]) (fromList [Edge 1 2, Edge 2 3, Edge 3 1])
+
+t_transpose1 = Graph.transpose g13 ~?= Graph (nodes g13) (fromList [Edge 1 3, Edge 2 1, Edge 3 2])
+t_transpose2 = Graph.transpose emptyGraph ~?= emptyGraph
 
 -- Testar union
-g13 :: Graph Int
-g13 = Graph { nodes = fromList [1,2], edges = fromList [Edge 2 1] }
-
 g14 :: Graph Int
-g14 = Graph { nodes = fromList [2,3], edges = fromList [Edge 3 2] }
+g14 = Graph (fromList [1,2]) (fromList [Edge 2 1])
 
-t_union = Graph.union g13 g14 ~?= Graph { nodes = fromList [1,2,3], edges = fromList [Edge 2 1, Edge 3 2] }
+g15 :: Graph Int
+g15 = Graph (fromList [2,3]) (fromList [Edge 3 2])
+
+t_union = Graph.union g14 g15 ~?= Graph (fromList [1,2,3]) (fromList [Edge 2 1, Edge 3 2])
 
 -- Tarefa 1
 --
@@ -190,8 +199,8 @@ dag = do ns <- arbitrary
                                         let g = Graph { nodes = ns, edges = fromList t}
                                             l = Set.map (\ node -> (node, reachable (Graph.transpose g) node)) ns
                                             (node, r) = elemAt p l
-                                            diff = ns \\ r
-                                         in case Set.null dn of
+                                            diff = ns Set.\\ r
+                                         in case Set.null diff of
                                                True  -> return t
                                                False -> do h <- selectEdge node diff
                                                            return (h:t)
@@ -218,6 +227,31 @@ prop_forest = forAll (forest :: Gen (Forest Int)) $ \g -> collect (length (edges
 -- do módulo Graph.
 --
 
+-- quickCheck swap
+prop_swap :: Edge Int -> Property
+prop_swap e = source e == target (swap e) .&&. target e == source (swap e)
+
+-- quickCheck empty
+prop_empty :: Property
+prop_empty = let g = Graph.empty
+              in Set.null (nodes g) .&&. Set.null (edges g)
+
 -- Exemplo de uma propriedade QuickCheck para testar a função adj          
 prop_adj :: Graph Int -> Property
 prop_adj g = forAll (elements $ elems $ nodes g) $ \v -> adj g v `isSubsetOf` edges g
+
+-- quickcheck transpose
+prop_transpose :: Graph Int -> Property
+prop_transpose g = let g' = Graph.transpose g
+                    in nodes g == nodes g' .&&. Set.map (swap) (edges g') == edges g
+
+-- quickCheck union
+prop_union :: Graph Int -> Graph Int -> Property
+prop_union g1 g2 = let g = Graph.union g1 g2
+                       nodes_g1 = size (Set.filter (\ v -> member v (nodes g)) (nodes g1)) == size (nodes g1)
+                       nodes_g2 = size (Set.filter (\ v -> member v (nodes g)) (nodes g2)) == size (nodes g2)
+                       edges_g1 = size (Set.filter (\ e -> member e (edges g)) (edges g1)) == size (edges g1)
+                       edges_g2 = size (Set.filter (\ e -> member e (edges g)) (edges g2)) == size (edges g2)
+                       extra_nd = Set.null $ (nodes g1 `Set.union` nodes g2) Set.\\ (nodes g)
+                       extra_ed = Set.null $ (edges g1 `Set.union` edges g2) Set.\\ (edges g)
+                   in conjoin [nodes_g1, nodes_g2, edges_g1, edges_g2, extra_nd, extra_ed]
