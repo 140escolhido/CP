@@ -192,11 +192,15 @@ dag = do ns <- arbitrary
                     e <- aux n (fromList ns)
                     return $ Graph {nodes = fromList ns, edges = fromList e }
 
-                    where aux :: (Ord v) => Int -> Set v -> Gen [Edge v]
+                    where selectEdge :: v -> Set v -> Gen (Edge v)
+                          selectEdge src nodes = do trg <- elements $ toList nodes
+                                                    return $ Edge {source = src, target = trg}
+
+                          aux :: (Ord v) => Int -> Set v -> Gen [Edge v]
                           aux 0 ns = return []
                           aux n ns = do t <- aux (n-1) ns 
                                         p <- choose (0, length ns - 1)
-                                        let g = Graph { nodes = ns, edges = fromList t}
+                                        let g = Graph ns (fromList t)
                                             l = Set.map (\ node -> (node, reachable (Graph.transpose g) node)) ns
                                             (node, r) = elemAt p l
                                             diff = ns Set.\\ r
@@ -205,9 +209,6 @@ dag = do ns <- arbitrary
                                                False -> do h <- selectEdge node diff
                                                            return (h:t)
 
-                          selectEdge :: v -> Set v -> Gen (Edge v)
-                          selectEdge src nodes = do trg <- elements $ toList nodes
-                                                    return $ Edge {source = src, target = trg}
                                           
 
 prop_dag :: Property
@@ -255,3 +256,41 @@ prop_union g1 g2 = let g = Graph.union g1 g2
                        extra_nd = Set.null $ (nodes g1 `Set.union` nodes g2) Set.\\ (nodes g)
                        extra_ed = Set.null $ (edges g1 `Set.union` edges g2) Set.\\ (edges g)
                    in conjoin [nodes_g1, nodes_g2, edges_g1, edges_g2, extra_nd, extra_ed]
+
+
+prop_topo :: Property
+prop_topo = let g = (dag :: Gen (DAG Int))
+                prop1 = forAll g checkAdj
+                prop2 = sameNodes g
+                prop3 = sameSize g
+             in prop1 .&&. prop2 .&&. prop3
+
+      where index :: Ord a => [Set a] -> a -> Maybe Int
+            index [] _ = Nothing
+            index (h:t) x | x `member` h = return 0
+                          | otherwise = do r <- index t x
+                                           return (1 + r)
+
+            checkAdj :: Graph Int -> Property
+            checkAdj g = case isEmpty g of
+                           True -> topo g === []
+                           False -> case Set.null (edges g) of
+                                     True -> topo g === [nodes g]
+                                     False -> forAll (elements $ elems $ nodes g) (\ n -> checkAdjAux n g)
+
+            checkAdjAux :: Int -> Graph Int -> Bool
+            checkAdjAux node g = let node_ind = topo g `index` node
+                                     adjs = Prelude.map target (toList $ adj g node)
+                                     adj_ind = Prelude.map (\n -> (topo g) `index` n) adjs
+                                  in if adj_ind == [] then True
+                                     else node_ind < (minimum $ adj_ind)
+
+            sameNodes :: Gen (DAG Int) -> Gen Bool
+            sameNodes g = do g' <- g
+                             let n = unions $ topo g'
+                             return (n == nodes g')
+
+            sameSize :: Gen (DAG Int) -> Gen Bool
+            sameSize g = do g' <- g
+                            let s = sum $ Prelude.map size (topo g')
+                            return (s == size (nodes g'))
