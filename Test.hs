@@ -17,9 +17,9 @@
 -- Curso: MIEI
 --
 -- Aluno 2
--- Número:
--- Nome:
--- Curso:
+-- Número: A73860
+-- Nome: Guilherme Vasconcelos da Silva Guerreiro
+-- Curso: MIEI
 --
 
 
@@ -136,6 +136,42 @@ g15 :: Graph Int
 g15 = Graph (fromList [2,3]) (fromList [Edge 3 2])
 
 t_union = Graph.union g14 g15 ~?= Graph (fromList [1,2,3]) (fromList [Edge 2 1, Edge 3 2])
+
+-- Testar reachable
+g17 :: Graph Int
+g17 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 3, Edge 2 1, Edge 3 2] }
+
+g18 :: Graph Int
+g18 = Graph { nodes = fromList [1], edges = Set.empty }
+
+t_reachable = [t_reachable1, t_reachable2]
+t_reachable1 = reachable g17 1 ~?= fromList [2, 3]
+t_reachable2 = reachable g18 ~?= fromList []
+
+-- Testar isPathOf
+g19 :: Graph Int
+g19 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 3, Edge 1 2, Edge 3 2] }
+
+g20 :: Graph Int
+g20 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 2, Edge 2 3] }
+
+t_isPathOf = [t_isPathOf1, t_isPathOf2]
+t_isPathOf1 = isPathOf [ Edge { source = 1, target = 2 }, Edge { source = 1, target = 3 } ] g19 ~?= True
+t_isPathOf2 = isPathOf [ Edge { source = 1, target = 2}, Edge { source = 1, target = 3} ] g20 ~?= False
+
+-- Testar path
+g21 :: Graph Int
+g21 = Graph { nodes = fromList [1,2,3,4], edges = fromList [Edge 1 2, Edge 3 2] }
+
+t_path = [t_path1, t_path2]
+t_path1 = path g21 1 3 ~?= [ Edge { source = 1, target = 2 }, Edge { source 2, target = 3 } ]
+t_path2 = path g21 2 4 ~?= Nothing
+
+-- Testar topo
+g22 :: Graph Int
+g22 = Graph { nodes = fromList [1,2,3,4], edges = fromList [Edge 1 2, Edge 1 3, Edge 2 4] }
+
+t_topo = topo g22 ~?= fromList [[1], [2,3], [4]]
 
 -- Tarefa 1
 --
