@@ -30,7 +30,7 @@ import Test.HUnit hiding (path)
 import Test.QuickCheck
 import Data.Set as Set
 
-import Data.List
+import Data.List as List
 
 --
 -- Teste unitário
@@ -172,13 +172,13 @@ instance Arbitrary v => Arbitrary (Edge v) where
 instance (Ord v, Arbitrary v) => Arbitrary (Graph v) where
     arbitrary = do ns <- arbitrary
                    case ns of 
-                     [] -> return $ Graph { nodes = Set.empty, edges = Set.empty} 
+                     [] -> return $ Graph Set.empty Set.empty
                      _  -> do es <- listOf (aux ns) 
-                              return $ Graph {nodes = fromList ns, edges = fromList es}
+                              return $ Graph (fromList ns) (fromList es)
 
                      where aux ns = do src <- elements ns
                                        trg <- elements ns
-                                       return $ Edge {source = src, target = trg }
+                                       return $ Edge src trg
  
 prop_valid :: Graph Int -> Property
 prop_valid g = collect (length (edges g)) $ isValid g
@@ -257,7 +257,54 @@ prop_union g1 g2 = let g = Graph.union g1 g2
                        extra_ed = Set.null $ (edges g1 `Set.union` edges g2) Set.\\ (edges g)
                    in conjoin [nodes_g1, nodes_g2, edges_g1, edges_g2, extra_nd, extra_ed]
 
+prop_bft :: Graph Int -> Property
+prop_bft g = property $ aux g
 
+    where aux g = case size (nodes g) > 1 of
+                     True -> do i <- elements $ elems $ nodes g
+                                let t = bft g $ singleton i
+                                    prop1 = isForest t
+                                    prop2 = Set.map swap (edges t) `isSubsetOf` edges g
+                                    prop3 = checkAdj g (singleton i) == nodes t
+                                case size (nodes g) > 2 of
+                                   True -> do f <- elements $ List.delete i $ elems $ nodes g 
+                                              let prop4 = checkPaths g t i f
+                                              return (prop1 && prop2 && prop3 && prop4)
+
+                                   False -> return (prop1 && prop2 && prop3)
+                     False -> return True
+
+          checkAdj :: Graph Int -> Set Int -> Set Int
+          checkAdj g s = let adjs = Set.map target $ Set.foldr Set.union Set.empty $ Set.map (adj g) s
+                             s' = Set.union s adjs
+                          in if s == s' then s else checkAdj g s'
+
+          checkPaths :: Graph Int -> Forest Int -> Int -> Int -> Bool
+          checkPaths g tree i f = let paths = getPaths g i f Set.empty
+                                      minLength = findMin $ Set.map size paths
+                                      edgs = Set.map swap (edges tree)
+                                      (shorter, longer) = Set.partition (\ p -> size p == minLength) paths
+                                      shorterC = and $ toList $ Set.map (\ p -> p `isSubsetOf` edgs) shorter
+                                      longerC = and $ toList $ Set.map (\p -> not $ Set.null p || p `isSubsetOf` edgs) longer
+                                   in shorterC && longerC
+                                                
+                                                  
+
+-- Auxiliar
+
+concatSet :: Ord a => Set (Set a) -> Set a
+concatSet s = Set.foldr Set.union Set.empty s
+
+getPaths :: Graph Int -> Int -> Int -> Set Int -> Set (Set (Edge Int))
+getPaths g i f l = let r = aux g i f (Set.insert i l)
+                    in Set.filter (\ e -> f `member` Set.map target e) r
+
+        where aux g i f l | i == f = Set.empty
+                          | otherwise = let adjs = Set.map target (adj g i) Set.\\ l
+                                         in if Set.null adjs then Set.empty
+                                            else Set.map (\ v -> Set.insert (Edge i v) $ concatSet (getPaths g v f l)) adjs
+
+---------------------------------------------
 prop_topo :: Property
 prop_topo = let g = (dag :: Gen (DAG Int))
                 prop1 = forAll g checkAdj
