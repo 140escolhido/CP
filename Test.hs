@@ -140,24 +140,24 @@ t_union = Graph.union g14 g15 ~?= Graph (fromList [1,2,3]) (fromList [Edge 2 1, 
 
 -- Testar reachable
 g17 :: Graph Int
-g17 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 3, Edge 2 1, Edge 3 2] }
+g17 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 3, Edge 1 2, Edge 3 2] }
 
 g18 :: Graph Int
 g18 = Graph { nodes = fromList [1], edges = Set.empty }
 
 t_reachable = [t_reachable1, t_reachable2]
-t_reachable1 = reachable g17 1 ~?= fromList [2, 3]
-t_reachable2 = reachable g18 1 ~?= fromList []
+t_reachable1 = reachable g17 1 ~?= fromList [1 ,2, 3]
+t_reachable2 = reachable g18 3 ~?= fromList [3]
 
 -- Testar isPathOf
 g19 :: Graph Int
-g19 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 3, Edge 1 2, Edge 3 2] }
+g19 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 3, Edge 1 2, Edge 2 3] }
 
 g20 :: Graph Int
 g20 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 2, Edge 2 3] }
 
 t_isPathOf = [t_isPathOf1, t_isPathOf2]
-t_isPathOf1 = isPathOf [ Edge { source = 1, target = 2 }, Edge { source = 1, target = 3 } ] g19 ~?= True
+t_isPathOf1 = isPathOf [ Edge { source = 1, target = 2 }, Edge { source = 2, target = 3 } ] g19 ~?= True
 t_isPathOf2 = isPathOf [ Edge { source = 1, target = 2}, Edge { source = 1, target = 3} ] g20 ~?= False
 
 -- Testar path
@@ -250,11 +250,27 @@ prop_dag = forAll (dag :: Gen (DAG Int)) $ \g -> collect (length (edges g)) $ is
 
 -- Gerador de florestas
 forest :: (Ord v, Arbitrary v) => Gen (Forest v)
-forest = arbitrary `suchThat` isForest
+forest = do ft <- dag
+            case Set.null (nodes ft) of
+                 True -> return ft  
+                 False -> do let v = genVlist ft (toList (nodes ft))
+                             return (bft ft v)
+
+        where genVlist :: Ord v => Graph v -> [v] -> Set v
+              genVlist g [] = Set.empty
+              genVlist g (h:t) = case Set.size (reachable g h) == 1 of
+                                      False -> let v' = reachable g h
+                                                   g' = genVlist g (toList(deleteAux (fromList t) (toList v')))
+                                               in (Set.union (fromList [h]) g')
+                                      True -> genVlist g t
+
+              deleteAux :: Ord v => Set v -> [v] -> Set v
+              deleteAux v [x] = fromList [x];
+              deleteAux v (h:t) = Set.union (Set.delete h v) (deleteAux v t)               
+
 
 prop_forest :: Property
-prop_forest = forAll (forest :: Gen (Forest Int)) $ \g -> collect (length (edges g)) $ isForest g
-
+prop_forest = forAll (forest :: Gen (Forest Int)) $ \g-> collect (length (edges g)) $ isForest g
 --
 -- Tarefa 3
 --
