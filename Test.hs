@@ -37,7 +37,8 @@ import Data.List as List
 --
 
 t_list = concat  [t_swap, [t_empty], t_transpose, [t_union], t_isEmpty, t_isValid,
-                  t_isDAG, t_isForest, t_isSubgraphOf, t_adj]
+                  t_isDAG, t_isForest, t_isSubgraphOf, t_adj, t_isPathOf, t_path,
+                  t_reachable]
 
 -- Testar swap
 t_swap = [t_swap1, t_swap2]
@@ -205,17 +206,18 @@ instance Arbitrary v => Arbitrary (Edge v) where
                    t <- arbitrary
                    return $ Edge {source = s, target = t}
 
+createEdge :: [v] -> Gen (Edge v)
+createEdge nodes = do source <- elements nodes
+                      target <- elements nodes
+                      return $ Edge source target
+
 instance (Ord v, Arbitrary v) => Arbitrary (Graph v) where
     arbitrary = do ns <- arbitrary
-                   case ns of 
-                     [] -> return $ Graph Set.empty Set.empty
-                     _  -> do es <- listOf (aux ns) 
-                              return $ Graph (fromList ns) (fromList es)
+                   case ns of
+                      [] -> return $ Graph Set.empty Set.empty 
+                      _  -> do es <- listOf (createEdge ns)
+                               return $ Graph (fromList ns) (fromList es)
 
-                     where aux ns = do src <- elements ns
-                                       trg <- elements ns
-                                       return $ Edge src trg
- 
 prop_valid :: Graph Int -> Property
 prop_valid g = collect (length (edges g)) $ isValid g
 
@@ -223,30 +225,26 @@ prop_valid g = collect (length (edges g)) $ isValid g
 dag :: (Ord v, Arbitrary v) => Gen (DAG v)
 dag = do ns <- arbitrary
          case ns of
-           [] -> return $ Graph { nodes = Set.empty, edges = Set.empty }
-           _  -> do n <- choose (0, 100)
-                    e <- aux n (fromList ns)
-                    return $ Graph {nodes = fromList ns, edges = fromList e }
+            [] -> return $ Graph Set.empty Set.empty
+            _  -> do num <- choose (0, 100)
+                     genDAG (Graph (fromList ns) Set.empty) num
 
-                    where selectEdge :: v -> Set v -> Gen (Edge v)
-                          selectEdge src nodes = do trg <- elements $ toList nodes
-                                                    return $ Edge {source = src, target = trg}
-
-                          aux :: (Ord v) => Int -> Set v -> Gen [Edge v]
-                          aux 0 ns = return []
-                          aux n ns = do t <- aux (n-1) ns 
-                                        p <- choose (0, length ns - 1)
-                                        let g = Graph ns (fromList t)
-                                            l = Set.map (\ node -> (node, reachable (Graph.transpose g) node)) ns
-                                            (node, r) = elemAt p l
-                                            diff = ns Set.\\ r
-                                         in case Set.null diff of
-                                               True  -> return t
-                                               False -> do h <- selectEdge node diff
-                                                           return (h:t)
-
-                                          
-
+      where genSafeEdge :: Ord v => Graph v -> Int -> Gen (Maybe (Edge v))
+            genSafeEdge _ 9 = return Nothing
+            genSafeEdge g n = do let ns = toList $ nodes g
+                                 edge <- createEdge ns
+                                 if source edge `notMember` reachable g (target edge) then return (Just edge)
+                                 else genSafeEdge g (n+1)
+ 
+            genDAG :: Ord v => Graph v -> Int -> Gen (Graph v)
+            genDAG g 0 = return g
+            genDAG g n = do g' <- genDAG g (n-1)
+                            edge <- genSafeEdge g' 0
+                            case edge of
+                                Nothing     -> return g
+                                (Just edge) -> return $ Graph (nodes g') (Set.insert edge (edges g'))
+                            
+                            
 prop_dag :: Property
 prop_dag = forAll (dag :: Gen (DAG Int)) $ \g -> collect (length (edges g)) $ isDAG g
 
@@ -265,7 +263,7 @@ prop_forest = forAll (forest :: Gen (Forest Int)) $ \g -> collect (length (edges
 --
 
 -- quickCheck swap
-prop_swap :: Edge Int -> Property
+prop_swap :: Ord v => Edge v -> Property
 prop_swap e = source e == target (swap e) .&&. target e == source (swap e)
 
 -- quickCheck empty
@@ -273,63 +271,102 @@ prop_empty :: Property
 prop_empty = let g = Graph.empty
               in Set.null (nodes g) .&&. Set.null (edges g)
 
+-- quickCheck isEmpty
+prop_isEmpty :: Graph v -> Property
+prop_isEmpty g = Set.null (nodes g) .&&. Set.null (edges g)
+
 -- Exemplo de uma propriedade QuickCheck para testar a função adj          
-prop_adj :: Graph Int -> Property
+prop_adj :: (Show v, Ord v) => Graph v -> Property
 prop_adj g = forAll (elements $ elems $ nodes g) $ \v -> adj g v `isSubsetOf` edges g
 
 -- quickcheck transpose
-prop_transpose :: Graph Int -> Property
+prop_transpose :: (Show v, Ord v) => Graph v-> Property
 prop_transpose g = let g' = Graph.transpose g
                     in nodes g == nodes g' .&&. Set.map (swap) (edges g') == edges g
 
 -- quickCheck union
-prop_union :: Graph Int -> Graph Int -> Property
+prop_union :: (Ord v) => Graph v -> Graph v -> Property
 prop_union g1 g2 = let g = Graph.union g1 g2
-                       nodes_g1 = size (Set.filter (\ v -> member v (nodes g)) (nodes g1)) == size (nodes g1)
-                       nodes_g2 = size (Set.filter (\ v -> member v (nodes g)) (nodes g2)) == size (nodes g2)
-                       edges_g1 = size (Set.filter (\ e -> member e (edges g)) (edges g1)) == size (edges g1)
-                       edges_g2 = size (Set.filter (\ e -> member e (edges g)) (edges g2)) == size (edges g2)
-                       extra_nd = Set.null $ (nodes g1 `Set.union` nodes g2) Set.\\ (nodes g)
-                       extra_ed = Set.null $ (edges g1 `Set.union` edges g2) Set.\\ (edges g)
-                   in conjoin [nodes_g1, nodes_g2, edges_g1, edges_g2, extra_nd, extra_ed]
+                       nodesG1 = size (Set.filter (\ v -> member v (nodes g)) (nodes g1)) == size (nodes g1)
+                       nodesG2 = size (Set.filter (\ v -> member v (nodes g)) (nodes g2)) == size (nodes g2)
+                       edgesG1 = size (Set.filter (\ e -> member e (edges g)) (edges g1)) == size (edges g1)
+                       edgesG2 = size (Set.filter (\ e -> member e (edges g)) (edges g2)) == size (edges g2)
+                       noExtraNodes = Set.null $ (nodes g1 `Set.union` nodes g2) Set.\\ (nodes g)
+                       noExtraEdges = Set.null $ (edges g1 `Set.union` edges g2) Set.\\ (edges g)
+                   in conjoin [nodesG1, nodesG2, edgesG1, edgesG2, noExtraNodes, noExtraEdges]
 
+-- quickCheck bft
 prop_bft :: Graph Int -> Property
 prop_bft g = property $ aux g
 
-    where aux g = case size (nodes g) > 1 of
-                     True -> do i <- elements $ elems $ nodes g
-                                let t = bft g $ singleton i
-                                    prop1 = isForest t
-                                    prop2 = Set.map swap (edges t) `isSubsetOf` edges g
-                                    prop3 = checkAdj g (singleton i) == nodes t
-                                case size (nodes g) > 2 of
-                                   True -> do f <- elements $ List.delete i $ elems $ nodes g 
-                                              let prop4 = checkPaths g t i f
-                                              return (prop1 && prop2 && prop3 && prop4)
+    where aux :: Graph Int -> Gen Bool
+          aux g = case size (nodes g) == 0 of
+                   True -> return True
+                   False -> do i <- elements $ elems $ nodes g
+                               let res = bft g (singleton i)
+                                   prop1 = isForest res
+                               case size (edges res) > 0 of
+                                  False -> return prop1
+                                  True  -> do r <- elements $ elems $ edges res
+                                              let prop2 = (edges res) `isSubsetOf` (edges $ Graph.transpose g)
+                                                  edg = swap r
+                                                  prop4 = edg `elem` (concat $ shortest $ allPaths g (target edg) (group (toList $ adj g i)))
+                                              return (prop1 && prop2 && prop4)
 
-                                   False -> return (prop1 && prop2 && prop3)
-                     False -> return True
+allPaths :: Graph Int -> Int -> [Graph.Path Int] -> [Graph.Path Int]
+allPaths g end [] = []
+allPaths g end (h:t) = let lastEdge = last h
+                           in case target lastEdge == end of
+                                 True  -> h : allPaths g end t
+                                 False -> let adjs = toList $ adj g (target lastEdge)
+                                           in allPaths g end (expandPaths h t adjs)
 
-          checkAdj :: Graph Int -> Set Int -> Set Int
-          checkAdj g s = let adjs = Set.map target $ Set.foldr Set.union Set.empty $ Set.map (adj g) s
-                             s' = Set.union s adjs
-                          in if s == s' then s else checkAdj g s'
+expandPaths :: Graph.Path Int -> [Graph.Path Int] -> [Edge Int] -> [Graph.Path Int]
+expandPaths _ l [] = l
+expandPaths p l (h:t) = if h `elem` p then expandPaths p l t
+                        else expandPaths p (l ++ [p ++ [h]]) t
 
-          checkPaths :: Graph Int -> Forest Int -> Int -> Int -> Bool
-          checkPaths g tree i f = let paths = getPaths g i f Set.empty
-                                      minLength = findMin $ Set.map size paths
-                                      edgs = Set.map swap (edges tree)
-                                      (shorter, longer) = Set.partition (\ p -> size p == minLength) paths
-                                      shorterC = and $ toList $ Set.map (\ p -> p `isSubsetOf` edgs) shorter
-                                      longerC = and $ toList $ Set.map (\p -> not $ Set.null p || p `isSubsetOf` edgs) longer
-                                   in shorterC && longerC
-                                                
-                                                  
+shortest :: [Graph.Path Int] -> [Graph.Path Int]
+shortest l = let min = minimum (Prelude.map length l)
+              in List.filter (\n -> min == length n) l
 
--- Auxiliar
+-- quickCheck topo
+prop_topo :: Property
+prop_topo = let prop1 = forAll (dag) checkAdj
+                prop2 = forAll (dag) sameNodes 
+                prop3 = forAll (dag) sameSize
+             in prop1 .&&. prop2 .&&. prop3
+
+      where checkAdj :: Graph Int -> Property
+            checkAdj g = case isEmpty g of
+                           True -> topo g === []
+                           False -> case Set.null (edges g) of
+                                     True -> topo g === [nodes g]
+                                     False -> forAll (elements $ elems $ nodes g) (\n -> checkAdjAux n g)
+
+            checkAdjAux :: Int -> Graph Int -> Bool
+            checkAdjAux node g = let nodeInd = topo g `index` node
+                                     adjs = Prelude.map target (toList $ adj g node)
+                                     adjInd = Prelude.map (\n -> (topo g) `index` n) adjs
+                                  in if adjInd == [] then True
+                                     else nodeInd < (minimum $ adjInd)
+
+            sameNodes :: DAG Int -> Bool
+            sameNodes g = nodes g == unions (topo g)
+
+            sameSize :: DAG Int -> Bool
+            sameSize g = size (nodes g) == sum (Prelude.map size (topo g))
+
+------ Auxiliar ------------------------------------------------------------
 
 concatSet :: Ord a => Set (Set a) -> Set a
 concatSet s = Set.foldr Set.union Set.empty s
+
+index :: Ord a => [Set a] -> a -> Maybe Int
+index [] _ = Nothing
+index (h:t) x | x `member` h = return 0
+              | otherwise = do r <- index t x
+                               return (1 + r)
 
 getPaths :: Graph Int -> Int -> Int -> Set Int -> Set (Set (Edge Int))
 getPaths g i f l = let r = aux g i f (Set.insert i l)
@@ -340,40 +377,3 @@ getPaths g i f l = let r = aux g i f (Set.insert i l)
                                          in if Set.null adjs then Set.empty
                                             else Set.map (\ v -> Set.insert (Edge i v) $ concatSet (getPaths g v f l)) adjs
 
----------------------------------------------
-prop_topo :: Property
-prop_topo = let g = (dag :: Gen (DAG Int))
-                prop1 = forAll g checkAdj
-                prop2 = sameNodes g
-                prop3 = sameSize g
-             in prop1 .&&. prop2 .&&. prop3
-
-      where index :: Ord a => [Set a] -> a -> Maybe Int
-            index [] _ = Nothing
-            index (h:t) x | x `member` h = return 0
-                          | otherwise = do r <- index t x
-                                           return (1 + r)
-
-            checkAdj :: Graph Int -> Property
-            checkAdj g = case isEmpty g of
-                           True -> topo g === []
-                           False -> case Set.null (edges g) of
-                                     True -> topo g === [nodes g]
-                                     False -> forAll (elements $ elems $ nodes g) (\ n -> checkAdjAux n g)
-
-            checkAdjAux :: Int -> Graph Int -> Bool
-            checkAdjAux node g = let node_ind = topo g `index` node
-                                     adjs = Prelude.map target (toList $ adj g node)
-                                     adj_ind = Prelude.map (\n -> (topo g) `index` n) adjs
-                                  in if adj_ind == [] then True
-                                     else node_ind < (minimum $ adj_ind)
-
-            sameNodes :: Gen (DAG Int) -> Gen Bool
-            sameNodes g = do g' <- g
-                             let n = unions $ topo g'
-                             return (n == nodes g')
-
-            sameSize :: Gen (DAG Int) -> Gen Bool
-            sameSize g = do g' <- g
-                            let s = sum $ Prelude.map size (topo g')
-                            return (s == size (nodes g'))
