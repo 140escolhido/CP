@@ -304,22 +304,50 @@ prop_isEmpty g = case Set.null (nodes g) && Set.null (edges g) of
                      False -> isEmpty g === False
 
 --quickCheck isValid
-prop_isValid :: Ord v => Graph v -> Property
-prop_isValid g = Set.isSubsetOf (Set.map source (edges g)) (nodes g) .&&. Set.isSubsetOf (Set.map target (edges g)) (nodes g) 
+prop_isValid :: Graph Int -> Property
+prop_isValid g = Set.isSubsetOf (Set.map source (edges g)) (nodes g) .&&. Set.isSubsetOf (Set.map target (edges g)) (nodes g) == isValid g
 
 --quickCheck isDAG
 prop_isDAG :: Graph Int -> Property
-prop_isDAG g = property $ isDAG g == adjx (elems(edges g)) g
+prop_isDAG g = property $ aux g
 
-       where adjx :: [Edge Int] -> Graph Int -> Bool
-             adjx [] g = True 
-             adjx (h:t) g  = if( source h `elem`(elems(reachable g (target h))))
-                             then False
-                             else adjx t g
+      where aux :: Graph Int -> Gen Bool
+            aux g = case size (nodes g) == 0 of
+                      True -> return True
+                      False -> return $ all nocycle (nodes g) == isDAG g
+
+            nocycle v = all (\a -> v `notMember` reachable g a) $ Set.map target (adj g v)
 
 --quickCheck isForest
+prop_isForest :: Property
+prop_isForest = property aux
+
+            where  aux :: Gen Bool
+                   aux = do g <- (dag :: Gen (Graph Int))
+                            case size (nodes g) <= 1 of
+                               True -> return True
+                               False -> return $ (all (\v -> length (adj g v) <= 1) (nodes g) == isForest g)
 
 --quickCheck isSubgraphOf 
+prop_isSubgraphOf :: Graph Int -> Property
+prop_isSubgraphOf g = property $ aux g
+
+        where aux :: Graph Int -> Gen Bool
+              aux g = do g' <- genSubgraph g
+                         return (isSubgraphOf g' g)
+
+genSubgraph :: Graph Int -> Gen (Graph Int)
+genSubgraph g = do num <- choose (0, (size(edges g)))
+                   let g' = Graph{nodes = Set.empty, edges = Set.empty}
+                   genAux g g' num
+          where genAux :: Graph Int -> Graph Int -> Int -> Gen (Graph Int) 
+                genAux g g' 0 = return g'
+                genAux g g' n = do g'' <- genAux g g' (n-1)
+                                   edge <- elements(elems(edges g))
+                                   let edgeList = Set.insert edge (edges g'')
+                                       nodesList = Set.map source edgeList `Set.union` Set.map target edgeList
+                                   return $ Graph nodesList edgeList
+
 
 -- Exemplo de uma propriedade QuickCheck para testar a função adj          
 prop_adj :: (Show v, Ord v) => Graph v -> Property
