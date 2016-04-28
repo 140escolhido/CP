@@ -303,6 +303,27 @@ prop_isEmpty g = case Set.null (nodes g) && Set.null (edges g) of
                      True  -> isEmpty g === True
                      False -> isEmpty g === False
 
+--quickCheck isValid
+prop_isValid :: Ord v => Graph v -> Property
+prop_isValid g = Set.isSubsetOf (Set.map source (edges g)) (nodes g) .&&. Set.isSubsetOf (Set.map target (edges g)) (nodes g) 
+
+--quickCheck isDAG
+prop_isDAG :: Ord v => Graph v -> Property
+prop_isDAG g = let prop1 = forAll (dag) adjx
+               in prop1
+
+       where adjx :: Graph Int -> Property
+             adjx g = forAll (elements $ elems $ nodes g) (\n -> adjxAux n g)
+
+             adjxAux :: Int -> Graph Int -> Bool
+             adjxAux n g = let adjs = Prelude.map target (toList $ adj g n)
+                               r = reachable g n
+                           in Set.notMember n r
+
+--quickCheck isForest
+
+--quickCheck isSubgraphOf 
+
 -- Exemplo de uma propriedade QuickCheck para testar a função adj          
 prop_adj :: (Show v, Ord v) => Graph v -> Property
 prop_adj g = forAll (elements $ elems $ nodes g) $ \v -> adj g v `isSubsetOf` edges g
