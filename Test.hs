@@ -296,17 +296,14 @@ prop_isValid :: Ord v => Graph v -> Property
 prop_isValid g = Set.isSubsetOf (Set.map source (edges g)) (nodes g) .&&. Set.isSubsetOf (Set.map target (edges g)) (nodes g) 
 
 --quickCheck isDAG
-prop_isDAG :: Ord v => Graph v -> Property
-prop_isDAG g = let prop1 = forAll (dag) adjx
-               in prop1
+prop_isDAG :: Graph Int -> Property
+prop_isDAG g = property $ isDAG g == adjx (elems(edges g)) g
 
-       where adjx :: Graph Int -> Property
-             adjx g = forAll (elements $ elems $ nodes g) (\n -> adjxAux n g)
-
-             adjxAux :: Int -> Graph Int -> Bool
-             adjxAux n g = let adjs = Prelude.map target (toList $ adj g n)
-                               r = reachable g n
-                           in Set.notMember n r
+       where adjx :: [Edge Int] -> Graph Int -> Bool
+             adjx [] g = True 
+             adjx (h:t) g  = if( source h `elem`(elems(reachable g (target h))))
+                             then False
+                             else adjx t g
 
 --quickCheck isForest
 
