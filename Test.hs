@@ -31,6 +31,7 @@ import Test.QuickCheck
 import Data.Set as Set
 
 import Data.List as List
+import Control.Monad.State
 
 --
 -- Teste unitário
@@ -38,7 +39,7 @@ import Data.List as List
 
 t_list = concat  [t_swap, [t_empty], t_transpose, [t_union], t_isEmpty, t_isValid,
                   t_isDAG, t_isForest, t_isSubgraphOf, t_adj, t_isPathOf, t_path,
-                  t_reachable]
+                  t_reachable, [t_bft], t_topo]
 
 -- Testar swap
 t_swap = [t_swap1, t_swap2]
@@ -138,6 +139,9 @@ g15 = Graph (fromList [2,3]) (fromList [Edge 3 2])
 
 t_union = Graph.union g14 g15 ~?= Graph (fromList [1,2,3]) (fromList [Edge 2 1, Edge 3 2])
 
+-- Testar bft
+t_bft =  bft (Graph (fromList [3,4,1,5,7,1,0]) (fromList [Edge 4 3, Edge 0 1, Edge 5 7, Edge 1 3, Edge 5 4])) (singleton 0) ~?= Graph (fromList [0,1,3]) (fromList [Edge 1 0, Edge 3 1])
+
 -- Testar reachable
 g17 :: Graph Int
 g17 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 3, Edge 1 2, Edge 3 2] }
@@ -146,7 +150,7 @@ g18 :: Graph Int
 g18 = Graph { nodes = fromList [1], edges = Set.empty }
 
 t_reachable = [t_reachable1, t_reachable2]
-t_reachable1 = reachable g17 1 ~?= fromList [1 ,2, 3]
+t_reachable1 = reachable g17 1 ~?= fromList [1, 2, 3]
 t_reachable2 = reachable g18 3 ~?= fromList [3]
 
 -- Testar isPathOf
@@ -156,9 +160,10 @@ g19 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 3, Edge 1 2, Ed
 g20 :: Graph Int
 g20 = Graph { nodes = fromList [1,2,3], edges = fromList [Edge 1 2, Edge 2 3] }
 
-t_isPathOf = [t_isPathOf1, t_isPathOf2]
+t_isPathOf = [t_isPathOf1, t_isPathOf2, t_isPathOf3]
 t_isPathOf1 = isPathOf [ Edge { source = 1, target = 2 }, Edge { source = 2, target = 3 } ] g19 ~?= True
 t_isPathOf2 = isPathOf [ Edge { source = 1, target = 2}, Edge { source = 1, target = 3} ] g20 ~?= False
+t_isPathOf3 = isPathOf [] g20 ~?= True
 
 -- Testar path
 g21 :: Graph Int
@@ -172,7 +177,12 @@ t_path2 = path g21 2 4 ~?= Nothing
 g22 :: Graph Int
 g22 = Graph { nodes = fromList [1,2,3,4], edges = fromList [Edge 1 2, Edge 1 3, Edge 2 4] }
 
-t_topo = topo g22 ~?= [fromList [1], fromList [2,3], fromList [4]]
+g23 :: Graph Int
+g23 = Graph (fromList []) (fromList [])
+
+t_topo = [t_topo1, t_topo2]
+t_topo1 = topo g22 ~?= [fromList [1], fromList [2,3], fromList [4]]
+t_topo2 = topo g23 ~?= []
 
 -- Tarefa 1
 --
@@ -206,15 +216,11 @@ instance Arbitrary v => Arbitrary (Edge v) where
                    t <- arbitrary
                    return $ Edge {source = s, target = t}
 
-createEdge :: [v] -> Gen (Edge v)
-createEdge nodes = do source <- elements nodes
-                      target <- elements nodes
-                      return $ Edge source target
 
 instance (Ord v, Arbitrary v) => Arbitrary (Graph v) where
     arbitrary = do ns <- arbitrary
                    case ns of
-                      [] -> return $ Graph Set.empty Set.empty 
+                      [] -> return (Graph Set.empty Set.empty)
                       _  -> do es <- listOf (createEdge ns)
                                return $ Graph (fromList ns) (fromList es)
 
@@ -226,13 +232,14 @@ dag :: (Ord v, Arbitrary v) => Gen (DAG v)
 dag = do ns <- arbitrary
          case ns of
             [] -> return $ Graph Set.empty Set.empty
-            _  -> do num <- choose (0, 100)
+            _  -> do num <- choose (0, 90)
                      genDAG (Graph (fromList ns) Set.empty) num
 
       where genSafeEdge :: Ord v => Graph v -> Int -> Gen (Maybe (Edge v))
             genSafeEdge _ 9 = return Nothing
             genSafeEdge g n = do let ns = toList $ nodes g
                                  edge <- createEdge ns
+                                 let g' = Graph (fromList ns) (Set.insert edge (edges g))
                                  if source edge `notMember` reachable g (target edge) then return (Just edge)
                                  else genSafeEdge g (n+1)
  
@@ -241,7 +248,7 @@ dag = do ns <- arbitrary
             genDAG g n = do g' <- genDAG g (n-1)
                             edge <- genSafeEdge g' 0
                             case edge of
-                                Nothing     -> return g
+                                Nothing -> return g
                                 (Just edge) -> return $ Graph (nodes g') (Set.insert edge (edges g'))
                             
                             
@@ -250,27 +257,31 @@ prop_dag = forAll (dag :: Gen (DAG Int)) $ \g -> collect (length (edges g)) $ is
 
 -- Gerador de florestas
 forest :: (Ord v, Arbitrary v) => Gen (Forest v)
-forest = do ft <- dag
-            case Set.null (nodes ft) of
-                 True -> return ft  
-                 False -> do let v = genVlist ft (toList (nodes ft))
-                             return (bft ft v)
+forest = do ns <- arbitrary
+            case ns of
+               [] -> return $ Graph Set.empty Set.empty
+               _  -> do num <- choose (0, 100)
+                        genForest (Graph (fromList ns) Set.empty) num
 
-        where genVlist :: Ord v => Graph v -> [v] -> Set v
-              genVlist g [] = Set.empty
-              genVlist g (h:t) = case Set.size (reachable g h) == 1 of
-                                      False -> let v' = reachable g h
-                                                   g' = genVlist g (toList(deleteAux (fromList t) (toList v')))
-                                               in (Set.union (fromList [h]) g')
-                                      True -> genVlist g t
-
-              deleteAux :: Ord v => Set v -> [v] -> Set v
-              deleteAux v [x] = fromList [x];
-              deleteAux v (h:t) = Set.union (Set.delete h v) (deleteAux v t)               
-
-
+      where genSafeEdge :: Ord v => Graph v -> Int -> Gen (Maybe (Edge v))
+            genSafeEdge _ 9 = return Nothing
+            genSafeEdge g n = do let ns = toList $ nodes g
+                                 edge <- createEdge ns
+                                 let g' = Graph (fromList ns) (Set.insert edge (edges g))
+                                 if isForest g' then return (Just edge)
+                                 else genSafeEdge g (n+1)
+ 
+            genForest :: Ord v => Graph v -> Int -> Gen (Graph v)
+            genForest g 0 = return g
+            genForest g n = do g' <- genForest g (n-1)
+                               edge <- genSafeEdge g' 0
+                               case edge of
+                                   Nothing -> return g
+                                   (Just edge) -> return $ Graph (nodes g') (Set.insert edge (edges g'))
+                            
 prop_forest :: Property
-prop_forest = forAll (forest :: Gen (Forest Int)) $ \g-> collect (length (edges g)) $ isForest g
+prop_forest = forAll (forest :: Gen (Forest Int)) $ \g -> collect (length (edges g)) $ isForest g
+
 --
 -- Tarefa 3
 --
@@ -279,29 +290,29 @@ prop_forest = forAll (forest :: Gen (Forest Int)) $ \g-> collect (length (edges 
 --
 
 -- quickCheck swap
-prop_swap :: Ord v => Edge v -> Property
+prop_swap :: Edge Int -> Property
 prop_swap e = source e == target (swap e) .&&. target e == source (swap e)
 
 -- quickCheck empty
 prop_empty :: Property
-prop_empty = let g = Graph.empty
-              in Set.null (nodes g) .&&. Set.null (edges g)
+prop_empty = Set.null (nodes Graph.empty) .&&. Set.null (edges Graph.empty)
 
 -- quickCheck isEmpty
-prop_isEmpty :: Graph v -> Property
-prop_isEmpty g = Set.null (nodes g) .&&. Set.null (edges g)
+prop_isEmpty :: Graph Int -> Property
+prop_isEmpty g = case Set.null (nodes g) && Set.null (edges g) of
+                     True  -> isEmpty g === True
+                     False -> isEmpty g === False
 
 -- Exemplo de uma propriedade QuickCheck para testar a função adj          
 prop_adj :: (Show v, Ord v) => Graph v -> Property
 prop_adj g = forAll (elements $ elems $ nodes g) $ \v -> adj g v `isSubsetOf` edges g
 
 -- quickcheck transpose
-prop_transpose :: (Show v, Ord v) => Graph v-> Property
-prop_transpose g = let g' = Graph.transpose g
-                    in nodes g == nodes g' .&&. Set.map (swap) (edges g') == edges g
+prop_transpose :: Graph Int -> Property
+prop_transpose g = nodes (Graph.transpose g) == nodes g .&&. Set.map swap (edges (Graph.transpose g)) == edges g
 
 -- quickCheck union
-prop_union :: (Ord v) => Graph v -> Graph v -> Property
+prop_union :: Graph Int -> Graph Int -> Property
 prop_union g1 g2 = let g = Graph.union g1 g2
                        nodesG1 = size (Set.filter (\ v -> member v (nodes g)) (nodes g1)) == size (nodes g1)
                        nodesG2 = size (Set.filter (\ v -> member v (nodes g)) (nodes g2)) == size (nodes g2)
@@ -314,47 +325,66 @@ prop_union g1 g2 = let g = Graph.union g1 g2
 -- quickCheck bft
 prop_bft :: Graph Int -> Property
 prop_bft g = property $ aux g
-
     where aux :: Graph Int -> Gen Bool
-          aux g = case size (nodes g) == 0 of
-                   True -> return True
-                   False -> do i <- elements $ elems $ nodes g
-                               let res = bft g (singleton i)
-                                   prop1 = isForest res
-                               case size (edges res) > 0 of
-                                  False -> return prop1
-                                  True  -> do r <- elements $ elems $ edges res
-                                              let prop2 = (edges res) `isSubsetOf` (edges $ Graph.transpose g)
-                                                  edg = swap r
-                                                  prop4 = edg `elem` (concat $ shortest $ allPaths g (target edg) (group (toList $ adj g i)))
-                                              return (prop1 && prop2 && prop4)
+          aux g | size (nodes g) == 0 = return True
+                | otherwise =  do i <- elements $ elems $ nodes g
+                                  let res = bft g (singleton i)
+                                  case size (edges res) > 0 of
+                                     False -> return True
+                                     True  -> do edg <- elements $ elems $ edges res
+                                                 let prop1 = isForest res
+                                                 let prop2 = (edges res) `isSubsetOf` (edges $ Graph.transpose g)
+                                                 let prop3 = checkAdj g (singleton i) == nodes res
+                                                 let prop4 = (swap edg) `member` (minimumClassified $ Set.filter (\ x -> source (fst x) == target edg) (classifyEdges g i))
+                                                 return (prop1 && prop2 && prop3 && prop4)
 
-allPaths :: Graph Int -> Int -> [Graph.Path Int] -> [Graph.Path Int]
-allPaths g end [] = []
-allPaths g end (h:t) = let lastEdge = last h
-                           in case target lastEdge == end of
-                                 True  -> h : allPaths g end t
-                                 False -> let adjs = toList $ adj g (target lastEdge)
-                                           in allPaths g end (expandPaths h t adjs)
 
-expandPaths :: Graph.Path Int -> [Graph.Path Int] -> [Edge Int] -> [Graph.Path Int]
-expandPaths _ l [] = l
-expandPaths p l (h:t) = if h `elem` p then expandPaths p l t
-                        else expandPaths p (l ++ [p ++ [h]]) t
+-- quickCheck reachable
+prop_reachable :: Graph Int -> Property
+prop_reachable g = case Set.null (nodes g) of 
+                    True  -> property True
+                    False -> forAll (elements $ elems $ nodes g) (\x -> checkAdj g (singleton x) == reachable g x)
 
-shortest :: [Graph.Path Int] -> [Graph.Path Int]
-shortest l = let min = minimum (Prelude.map length l)
-              in List.filter (\n -> min == length n) l
+-- quickCheck isPathOf
+prop_isPathOf :: Graph Int -> Property
+prop_isPathOf g = property $ aux g
+
+   where aux :: Graph Int -> Gen Bool
+         aux g | Set.null $ edges g = return $ isPathOf [] g == True
+               | otherwise = do path <- listOf $ createEdge $ toList (nodes g)
+                                return $ isPathOf path g == (all (\ x -> x `member` edges g) path
+                                                             && 
+                                                             and (zipWith (\ x y -> target x == source y) path (tail path)))
+
+-- quickCheck path
+prop_path :: Graph Int -> Int -> Int -> Property
+prop_path g x y | x == y = property $ path g x y == Just []
+                | size (nodes g) <= 1 = property $ path g x y == Nothing
+                | otherwise = property $ genPath g
+                                 
+
+                where genPath :: Graph Int -> Gen Bool
+                      genPath g = do x <- elements $ elems $ nodes g
+                                     y <- elements $ elems $ (Set.delete x $ nodes g)
+                                     let p = path g x y
+                                     return $ checkPath g x y p
+
+                      checkPath :: Graph Int -> Int -> Int -> Maybe (Graph.Path Int) -> Bool
+                      checkPath g start end path = let forest = bft g (singleton start)
+                                                       prop1 = end `member` Set.map (target . swap) (edges forest)
+                                                       in case path of
+                                                            Nothing -> prop1 == False
+                                                            (Just p) -> prop1 && all (\ x -> swap x `member` (edges forest)) p
 
 -- quickCheck topo
 prop_topo :: Property
-prop_topo = let prop1 = forAll (dag) checkAdj
+prop_topo = let prop1 = forAll (dag) checkAdjs
                 prop2 = forAll (dag) sameNodes 
                 prop3 = forAll (dag) sameSize
              in prop1 .&&. prop2 .&&. prop3
 
-      where checkAdj :: Graph Int -> Property
-            checkAdj g = case isEmpty g of
+      where checkAdjs :: Graph Int -> Property
+            checkAdjs g = case isEmpty g of
                            True -> topo g === []
                            False -> case Set.null (edges g) of
                                      True -> topo g === [nodes g]
@@ -378,18 +408,33 @@ prop_topo = let prop1 = forAll (dag) checkAdj
 concatSet :: Ord a => Set (Set a) -> Set a
 concatSet s = Set.foldr Set.union Set.empty s
 
+checkAdj :: Graph Int -> Set Int -> Set Int
+checkAdj g s = let adjs = Set.map target $ concatSet $ Set.map (adj g) s
+                   s' = Set.union s adjs
+                in if s == s' then s else checkAdj g s'
+
 index :: Ord a => [Set a] -> a -> Maybe Int
 index [] _ = Nothing
 index (h:t) x | x `member` h = return 0
               | otherwise = do r <- index t x
                                return (1 + r)
 
-getPaths :: Graph Int -> Int -> Int -> Set Int -> Set (Set (Edge Int))
-getPaths g i f l = let r = aux g i f (Set.insert i l)
-                    in Set.filter (\ e -> f `member` Set.map target e) r
+createEdge :: [v] -> Gen (Edge v)
+createEdge nodes = do source <- elements nodes
+                      target <- elements nodes
+                      return (Edge source target)
 
-        where aux g i f l | i == f = Set.empty
-                          | otherwise = let adjs = Set.map target (adj g i) Set.\\ l
-                                         in if Set.null adjs then Set.empty
-                                            else Set.map (\ v -> Set.insert (Edge i v) $ concatSet (getPaths g v f l)) adjs
+classifyEdges :: Graph Int -> Int -> Set ((Edge Int, Int))
+classifyEdges g ns = fst $ execState aux (Set.empty, ([ns], 0))
+            where aux = do (edges, (queue, num)) <- get
+                           if Prelude.null queue
+                           then return ()
+                           else do let c = head queue
+                                   let new = Set.filter (\e -> e `notMember` (Set.map fst edges)) (adj g c)
+                                   let es = Set.map (\ edg -> (edg, num)) new
+                                   put (edges `Set.union` es, (tail queue ++ elems (Set.map (\e -> target $ fst e) es), num+1))
+                                   aux
 
+minimumClassified :: Set (Edge Int, Int) -> Set (Edge Int)
+minimumClassified list = let min = minimum $ Set.map snd list
+                          in Set.map fst (Set.filter (\x -> snd x == min) list)
